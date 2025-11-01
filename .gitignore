@@ -1,0 +1,4 @@
+*.keras
+*.hs
+__pycache__/
+*.pyc
