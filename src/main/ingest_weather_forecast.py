@@ -17,7 +17,6 @@ API_KEY = os.getenv("API_KEY")
 if not API_KEY:
     raise ValueError("Missing API_KEY environment variable")
 
-CITIES = ["New York", "Los Angeles", "Chicago", "Miami", "Seattle"]
 S3_PATH = "s3://ece5984-s3-rameyjm7/Project/batch_ingest"
 LOCAL_FILE = "weather_forecast_all_cities.pkl"
 URL = "http://api.openweathermap.org/data/2.5/forecast"  # Free 5-day/3-hour endpoint
@@ -36,7 +35,14 @@ def fetch_forecast(city):
 # ---------------------------------------------------------------------------
 # Main ingestion function
 # ---------------------------------------------------------------------------
-def ingest_weather_forecast(cities):
+def ingest_weather_forecast(cities=None):
+    """
+    Ingest 5-day forecasts for all cities and save combined dataset to S3.
+    This function can be called without arguments (e.g., by Airflow or Kafka).
+    """
+    if cities is None:
+        cities = ["New York", "Los Angeles", "Chicago", "Miami", "Seattle"]
+
     all_records = []
 
     for city in cities:
@@ -75,7 +81,6 @@ def ingest_weather_forecast(cities):
     df = pd.DataFrame(all_records)
     df.sort_values(by=["city", "date"], inplace=True)
 
-    # Save locally
     with open(LOCAL_FILE, "wb") as f:
         pickle.dump(df, f)
     print(f"Saved local pickle file: {LOCAL_FILE}")
@@ -97,4 +102,4 @@ def ingest_weather_forecast(cities):
 # Entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    ingest_weather_forecast(CITIES)
+    ingest_weather_forecast()
