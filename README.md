@@ -1,48 +1,159 @@
+# 🌤️ Climate Trend Predictor
+
+<p align="left">
+  <img src="https://img.shields.io/badge/Status-Active-success?style=flat-square" />
+  <img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" />
+  <img src="https://img.shields.io/badge/Python-3.10%2B-blue?style=flat-square" />
+  <img src="https://img.shields.io/badge/Workflow-Apache%20Airflow-orange?style=flat-square" />
+  <img src="https://img.shields.io/badge/Cloud-AWS%20S3%20%7C%20RDS-yellow?style=flat-square" />
+  <img src="https://img.shields.io/badge/ML-TensorFlow%20%7C%20Keras-green?style=flat-square" />
+  <img src="https://img.shields.io/badge/Data%20Pipeline-Kafka%20%7C%20Airflow%20%7C%20S3-lightgrey?style=flat-square" />
+</p>
+
 # Climate Trend Predictor
 
-**Climate Trend Predictor** is an end-to-end data engineering pipeline for weather forecasting built with Apache Kafka, Apache Airflow, AWS S3, and TensorFlow.
-It ingests real-time and historical data from the OpenWeatherMap API, performs batch and micro-batch transformations, and prepares the dataset for machine-learning-based climate prediction.
+**Climate Trend Predictor** is a production-grade, cloud-native data engineering and forecasting pipeline built with Apache Airflow, Kafka, AWS S3, Amazon RDS, and TensorFlow.
 
-## Key Features
-- Automated ETL pipeline for weather and climate data
-- Kafka-based ingestion orchestrated by Apache Airflow
-- Scalable AWS S3 data lake and transformation layer
-- Data cleaning, outlier removal, and validation using pandas
-- LSTM forecasting model implemented in TensorFlow / Keras
-- Visualization-ready outputs for Tableau or Plotly dashboards
-- Modular proof of concept under src/POC/ for reproducible experimentation
+It provides automated ingestion, transformation, feature engineering, model training, and real-time prediction for weather and climate trends.
 
-## Tech Stack
-```
-| Layer                           | Technologies                              |
-|--------------------------------|-------------------------------------------|
-| Programming                    | Python, pandas, NumPy                     |
-| Ingestion                      | OpenWeatherMap API, Apache Kafka          |
-| Workflow Orchestration         | Apache Airflow                            |
-| Data Storage                   | AWS S3, Amazon RDS                        |
-| Compute                        | AWS EC2, local simulation                 |
-| Machine Learning               | TensorFlow, Keras                         |
-| Visualization                  | Tableau, Plotly                           |
-| Version Control / DevOps       | Git, GitHub                               |
-```
+---
 
-## Repository Structure
+## Key Capabilities
+- Automated ETL orchestration with Airflow  
+- Real-time & batch ingestion via API and Kafka  
+- Scalable AWS S3 data lake (raw → transformed → sequences → models)  
+- Data cleaning, validation, and feature engineering  
+- LSTM forecasting model in TensorFlow (saved as .keras)  
+- End-to-end provenance logging into Amazon RDS  
+- Dashboard-ready outputs (Tableau / Plotly)  
+- Modular, production-oriented architecture  
+
+---
+
+## Profiles
+- **GitHub:** https://github.com/rameyjm7  
+- **HuggingFace:** https://huggingface.co/rameyjm7  
+- **Kaggle:** https://www.kaggle.com/rameyjm7  
+
+---
+
+# Repository Structure
+
 ```
 src/
- ├── POC/
- │    ├── batch_ingest.py       # Collects and stores raw weather data
- │    ├── transform.py          # Cleans, validates, and aggregates datasets
- │    ├── EDA.py                # Exploratory data analysis and feature inspection
- │    └── dag.py                # Airflow DAG for automated execution
- └── (future modules to be added here)
+ ├── ingestion/
+ │     └── ingest_weather_forecast.py
+ ├── transform/
+ │     ├── transform_weather_data.py
+ │     └── prepare_sequences.py
+ ├── training/
+ │     └── train_lstm_model.py
+ ├── inference/
+ │     └── predict_next_hour.py
+ ├── airflow/
+ │     └── weather_pipeline_dag.py
+ ├── utils/
+ │     ├── db_utils.py
+ │     └── provenance_utils.py
+ └── archive/POC/
 ```
 
-Future phases will expand src/ with production-ready components for model training, evaluation, RDS integration, and dashboard deployment.
+---
 
-## Project Overview
-This project demonstrates a complete data engineering workflow — from raw data ingestion to machine learning-driven forecasting.
-Developed for ECE 5984: Data Engineering at Virginia Tech, it highlights scalable, cloud-integrated, and ML-ready data pipelines built with modern tools like Kafka, Airflow, and AWS.
+# System Overview
 
-## Author
-Jacob M. Ramey
-Virginia Tech – Department of Electrical and Computer Engineering
+The system is composed of four primary layers:
+
+1. **Ingestion Layer**  
+   API-driven ingestion + Kafka micro-batch pipelines.
+
+2. **Transformation Layer**  
+   Data cleaning, validation, schema enforcement, and feature engineering.
+
+3. **Modeling Layer**  
+   LSTM training, saving `.keras` models, and evaluation.
+
+4. **Inference Layer**  
+   Automated predictions stored in Amazon RDS for BI dashboards.
+
+---
+
+# 📦 Model Card – Weather LSTM Forecaster
+
+## Model Overview
+The **Weather LSTM Forecaster** is a multivariate LSTM model designed to predict short-term temperature trends using cleaned and scaled environmental features.  
+It consumes time-series sequences prepared by the pipeline.
+
+---
+
+## Intended Use
+- Short-term temperature prediction  
+- Climate pattern exploration  
+- Tableau / BI dashboards  
+- Operational forecasting systems  
+
+### Not Intended For
+- Emergency weather alerts  
+- Safety‑critical climate predictions  
+- Long‑range climate science  
+
+---
+
+## Training Data
+The model is trained on:
+- Cleaned OpenWeatherMap 5‑day/3‑hour weather forecast data  
+- Features:
+  - temperature  
+  - humidity  
+  - wind_speed  
+  - precipitation  
+- Time series built using **TimeSeriesSplit (10 splits)**  
+- Scaling via **MinMaxScaler**
+
+---
+
+## Model Architecture
+
+```
+LSTM(32 units, ReLU)
+Dense(1)
+Loss: MSE
+Optimizer: Adam
+Epochs: 25
+Batch size: 8
+```
+
+---
+
+## Evaluation
+The training pipeline logs:
+- Training MSE  
+- Validation MSE  
+
+Tableau dashboards compute:
+- MAE  
+- RMSE  
+
+---
+
+## Limitations
+- Accuracy depends on API data quality  
+- Designed for short-term predictions only  
+- Not suitable for high-stakes decision-making  
+
+---
+
+## Ethical Considerations
+- No personal or private data used  
+- Forecasts are statistical and approximate  
+- Safe for research, experimentation, and non-critical use  
+
+---
+
+# Author
+
+**Jacob M. Ramey**  
+Embedded Systems & Machine Learning Engineer  
+GitHub: https://github.com/rameyjm7  
+HuggingFace: https://huggingface.co/rameyjm7  
+Kaggle: https://www.kaggle.com/jacobramey
