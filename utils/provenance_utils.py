@@ -2,12 +2,29 @@ import time
 import json
 from sqlalchemy import create_engine
 from datetime import datetime
+import os
 
-# UPDATE THESE with your real credentials
-RDS_USER = "YOURUSER"
-RDS_PASS = "YOURPASS"
-RDS_HOST = "YOUR-RDS-ENDPOINT.amazonaws.com"
-RDS_DB   = "weatherdb"
+# ---------------------------------------------------------------------------
+# Load Amazon RDS credentials from environment
+# ---------------------------------------------------------------------------
+RDS_USER = os.getenv("RDS_USER")
+RDS_PASS = os.getenv("RDS_PASS")
+RDS_HOST = os.getenv("RDS_HOST")
+RDS_DB   = os.getenv("RDS_DB", "weatherdb")   # default to weatherdb if unset
+
+# Validate required variables
+missing = []
+
+if not RDS_USER:
+    missing.append("RDS_USER")
+if not RDS_PASS:
+    missing.append("RDS_PASS")
+if not RDS_HOST:
+    missing.append("RDS_HOST")
+
+if missing:
+    raise ValueError(f"Missing required RDS environment variables: {', '.join(missing)}")
+
 
 engine = create_engine(
     f"mysql+pymysql://{RDS_USER}:{RDS_PASS}@{RDS_HOST}/{RDS_DB}"
