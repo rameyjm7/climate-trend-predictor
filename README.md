@@ -70,7 +70,40 @@ Accuracy improved significantly after increasing dataset size and training durat
 Inference uses autoregressive multi-step prediction (+8 hours).
 
 <photo about model results>
-Forecast Results Visualization Placeholder
+
+<img width="751" height="307" alt="image" src="https://github.com/user-attachments/assets/299fb650-469c-40f2-aacb-f7f32a323ace" /> 
+
+Time-series temperature plot for Chicago 
+
+
+<img width="751" height="307" alt="image" src="https://github.com/user-attachments/assets/d7b7dd3f-fe8e-4802-834c-348bea39c898" />
+
+Figures 4. Time-series humidity plot for Los Angeles.
+
+
+<img width="416" height="353" alt="image" src="https://github.com/user-attachments/assets/3fb23608-b68e-4e1c-b325-1b654c98a839" />
+
+Feature correlation matrix for meteorological variables.
+
+
+<img width="454" height="472" alt="image" src="https://github.com/user-attachments/assets/f5b0eb50-14fa-4004-b6a8-6b660e722eb1" />
+
+Pairwise relationship between meteorological variables.
+
+
+<img width="750" height="293" alt="image" src="https://github.com/user-attachments/assets/fc2ebda5-cbe5-40e4-be86-25139c77a326" />
+
+Temperature autocorrelation confirms daily periodicity.
+
+
+<img width="1000" height="600" alt="image" src="https://github.com/user-attachments/assets/ae62f5a4-3e97-4735-aca6-ecd02cade0c8" />
+
+Actual versus predicted weather for Seattle
+
+
+<img width="1268" height="817" alt="image" src="https://github.com/user-attachments/assets/3f3d2573-ad5a-42ab-8621-511a4767c026" />
+
+Training versus validation MSE
 
 ---
 
@@ -136,3 +169,22 @@ In AWS EC2 container:
 - log in with the admin password
 - run the 'weather_full_pipeline' dag
 - view the graph to watch it execute
+
+
+<img width="975" height="252" alt="image" src="https://github.com/user-attachments/assets/93436c36-d51b-46e3-bb87-ab97ec9415cb" />
+
+
+DAG running in Apache Airflow
+
+
+<img width="975" height="252" alt="image" src="https://github.com/user-attachments/assets/5a98607f-9ed0-4297-8579-b6dda5cda71b" />
+
+DAG Pipeline graph
+
+
+Results are saved to a database and queryable, shown above. Also you can run inference on the CLI and here is an example output
+
+<img width="975" height="342" alt="image" src="https://github.com/user-attachments/assets/058abef8-0dd1-4edc-926a-bdd844e21994" />
+
+
+
