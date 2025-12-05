@@ -53,9 +53,6 @@ This project follows the **Batch-ML-Visualization pipeline**:
 - **Orchestration:** Apache Airflow DAG running daily  
 - **Visualization:** Matplotlib outputs for BI dashboards  
 
-<infographic>
-Pipeline Architecture Diagram Placeholder
-
 <photo about X>
 Example Visualization Placeholder
 
@@ -80,8 +77,9 @@ Forecast Results Visualization Placeholder
 ---
 
 # 7. Infographic
-<infographic>
-System Overview Infographic Placeholder
+
+<img width="512" height="776" alt="image" src="https://github.com/user-attachments/assets/67434b73-d24f-4d63-a4fe-1c903707f9e5" />
+
 
 ---
 
