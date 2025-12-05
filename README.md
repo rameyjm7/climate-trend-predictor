@@ -51,9 +51,6 @@ This project follows the **Batch-ML-Visualization pipeline**:
 - **Orchestration:** Apache Airflow DAG running daily  
 - **Visualization:** Matplotlib outputs for BI dashboards  
 
-<photo about X>
-Example Visualization Placeholder
-
 ---
 
 # 5. Data Quality Assessment
