@@ -7,153 +7,124 @@
   <img src="https://img.shields.io/badge/Workflow-Apache%20Airflow-orange?style=flat-square" />
   <img src="https://img.shields.io/badge/Cloud-AWS%20S3%20%7C%20RDS-yellow?style=flat-square" />
   <img src="https://img.shields.io/badge/ML-TensorFlow%20%7C%20Keras-green?style=flat-square" />
-  <img src="https://img.shields.io/badge/Data%20Pipeline-Kafka%20%7C%20Airflow%20%7C%20S3-lightgrey?style=flat-square" />
+  <img src="https://img.shields.io/badge/Data%20Pipeline-Python%20%7C%20Airflow-lightgrey?style=flat-square" />
 </p>
 
 # Climate Trend Predictor
 
-**Climate Trend Predictor** is a production-grade, cloud-native data engineering and forecasting pipeline built with Apache Airflow, Kafka, AWS S3, Amazon RDS, and TensorFlow.
-
-It provides automated ingestion, transformation, feature engineering, model training, and real-time prediction for weather and climate trends.
-
----
-
-## Key Capabilities
-- Automated ETL orchestration with Airflow  
-- Real-time & batch ingestion via API and Kafka  
-- Scalable AWS S3 data lake (raw → transformed → sequences → models)  
-- Data cleaning, validation, and feature engineering  
-- LSTM forecasting model in TensorFlow (saved as .keras)  
-- End-to-end provenance logging into Amazon RDS  
-- Dashboard-ready outputs (Tableau / Plotly)  
-- Modular, production-oriented architecture  
+**Climate Trend Predictor** is an end-to-end data engineering pipeline for city-level weather forecasting.  
+It automates ingestion, cleaning, transformation, LSTM model training, inference, and visualization using a Batch–ML–Visualization pipeline deployed both locally and on AWS.
 
 ---
 
-## Profiles
+# Profiles
 - **GitHub:** https://github.com/rameyjm7  
 - **HuggingFace:** https://huggingface.co/rameyjm7  
 - **Kaggle:** https://www.kaggle.com/rameyjm7  
 
 ---
 
-# Repository Structure
-
-```
-src/
- ├── ingestion/
- │     └── ingest_weather_forecast.py
- ├── transform/
- │     ├── transform_weather_data.py
- │     └── prepare_sequences.py
- ├── training/
- │     └── train_lstm_model.py
- ├── inference/
- │     └── predict_next_hour.py
- ├── airflow/
- │     └── weather_pipeline_dag.py
- ├── utils/
- │     ├── db_utils.py
- │     └── provenance_utils.py
- └── archive/POC/
-```
+# 1. Title
+**Climate Trend Predictor: A Batch–ML–Visualization Weather Forecasting System**
 
 ---
 
-# System Overview
-
-The system is composed of four primary layers:
-
-1. **Ingestion Layer**  
-   API-driven ingestion + Kafka micro-batch pipelines.
-
-2. **Transformation Layer**  
-   Data cleaning, validation, schema enforcement, and feature engineering.
-
-3. **Modeling Layer**  
-   LSTM training, saving `.keras` models, and evaluation.
-
-4. **Inference Layer**  
-   Automated predictions stored in Amazon RDS for BI dashboards.
+# 2. Project Function
+This pipeline forecasts temperature trends using cleaned historical, live, and forecast weather data.  
+It ingests data daily, maintains provenance, generates sliding-window sequences, trains an LSTM, and performs multi-hour inference (+8h).  
+Plots and BI-ready visualizations are automatically generated.
 
 ---
 
-# 📦 Model Card – Weather LSTM Forecaster
-
-## Model Overview
-The **Weather LSTM Forecaster** is a multivariate LSTM model designed to predict short-term temperature trends using cleaned and scaled environmental features.  
-It consumes time-series sequences prepared by the pipeline.
-
----
-
-## Intended Use
-- Short-term temperature prediction  
-- Climate pattern exploration  
-- Tableau / BI dashboards  
-- Operational forecasting systems  
-
-### Not Intended For
-- Emergency weather alerts  
-- Safety‑critical climate predictions  
-- Long‑range climate science  
+# 3. Dataset
+Data is sourced from OpenWeatherMap (forecast + live) and custom historical scraping to increase coverage.  
+Features include temperature, humidity, wind speed, and precipitation.  
+Merged and cleaned data is stored in local/S3 dual-mode folders or in MySQL RDS.
 
 ---
 
-## Training Data
-The model is trained on:
-- Cleaned OpenWeatherMap 5‑day/3‑hour weather forecast data  
-- Features:
-  - temperature  
-  - humidity  
-  - wind_speed  
-  - precipitation  
-- Time series built using **TimeSeriesSplit (10 splits)**  
-- Scaling via **MinMaxScaler**
+# 4. Pipeline / Architecture
+This project follows the **Batch-ML-Visualization pipeline**:
+
+- **Ingestion:** Python scripts + OpenWeatherMap API  
+- **Storage:** Local filesystem + AWS S3 + MySQL RDS  
+- **Transformation:** Cleaning, normalization, time-windowing  
+- **Modeling:** TensorFlow LSTM forecaster trained for 150 epochs  
+- **Orchestration:** Apache Airflow DAG running daily  
+- **Visualization:** Matplotlib outputs for BI dashboards  
+
+<infographic>
+Pipeline Architecture Diagram Placeholder
+
+<photo about X>
+Example Visualization Placeholder
 
 ---
 
-## Model Architecture
-
-```
-LSTM(32 units, ReLU)
-Dense(1)
-Loss: MSE
-Optimizer: Adam
-Epochs: 25
-Batch size: 8
-```
+# 5. Data Quality Assessment
+The dataset required substantial cleaning due to missing timestamps, inconsistent forecast intervals, and sparse values.  
+Data quality improved dramatically after scraping historical weather to fill coverage gaps.  
+Normalization, deduplication, type enforcement, and outlier checks were applied across all ingestion sources.
 
 ---
 
-## Evaluation
-The training pipeline logs:
-- Training MSE  
-- Validation MSE  
+# 6. Data Transformations & Models Used
+Transformations include merging datasets, feature standardization, and building 40-hour sliding windows.  
+A stacked LSTM model (128/64 units) with dropout and dense layers was trained for 150 epochs.  
+Accuracy improved significantly after increasing dataset size and training duration.  
+Inference uses autoregressive multi-step prediction (+8 hours).
 
-Tableau dashboards compute:
-- MAE  
-- RMSE  
-
----
-
-## Limitations
-- Accuracy depends on API data quality  
-- Designed for short-term predictions only  
-- Not suitable for high-stakes decision-making  
+<photo about model results>
+Forecast Results Visualization Placeholder
 
 ---
 
-## Ethical Considerations
-- No personal or private data used  
-- Forecasts are statistical and approximate  
-- Safe for research, experimentation, and non-critical use  
+# 7. Infographic
+<infographic>
+System Overview Infographic Placeholder
 
 ---
 
-# Author
+# 8. Code Repository
+GitHub Repository:  
+https://github.com/your-username/climate-trend-predictor
 
-**Jacob M. Ramey**  
-Embedded Systems & Machine Learning Engineer  
-GitHub: https://github.com/rameyjm7  
-HuggingFace: https://huggingface.co/rameyjm7  
-Kaggle: https://www.kaggle.com/jacobramey
+---
+
+# 9. Thorough Investigation
+
+### What Worked
+- The LSTM RNN effectively learned temporal dependencies once sufficient data was provided.  
+- Scraping additional historical data greatly improved performance and reduced MAE.  
+- Increasing training epochs to 150 (from 20) stabilized convergence and eliminated underfitting.  
+- Combining historical, live, and forecast data expanded the time horizon and improved model generalization.
+
+### What Did Not Work
+- The initial dataset was too limited to capture meaningful temperature patterns, resulting in poor accuracy.  
+- Early training attempts underfit due to insufficient temporal depth.  
+- Forecast-only data lacked variability and did not represent real atmospheric dynamics well.  
+- The model struggled with abrupt weather changes due to limited input features.
+
+### Model Complexity and Real-World Considerations
+In operational meteorology, weather prediction is performed using highly complex physics-based numerical weather prediction (NWP) systems such as HRRR, GFS, and ECMWF.  
+These models incorporate dozens of atmospheric variables, satellite and radar observations, pressure fields, humidity layers, wind vectors at multiple altitudes, and fluid dynamics equations.  
+
+By comparison, this project uses a **minimal feature set (temperature, humidity, wind speed, precipitation)** and a relatively small LSTM architecture.  
+Despite these constraints, the model performs **surprisingly well**, demonstrating that even lightweight data-driven models can capture short-term temporal trends.  
+Performance would improve further with:
+- Additional atmospheric features (pressure, cloud cover, dew point, visibility)  
+- Multi-layer radar reflectivity  
+- Satellite infrared/visible channels  
+- Longer historical time series  
+- Spatial features (neighboring city conditions)
+
+### Scalability, Viability, and Recommendations
+The pipeline’s modular design makes it viable for production-scale forecasting with more data sources and expanded feature engineering.  
+Airflow orchestration, dual AWS/local storage, and clear separation of ingestion, transformation, modeling, and inference support future scalability.  
+Recommended next steps include building a multivariate LSTM or Transformer, integrating radar/satellite inputs, and deploying the predictions to a real-time dashboard or API endpoint.
+
+---
+
+# 10. Running the Project
+
+### Manual Pipeline Execution
