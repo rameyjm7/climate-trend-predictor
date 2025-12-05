@@ -3,7 +3,7 @@
 
 import pandas as pd
 from sqlalchemy import create_engine
-from db_utils import get_engine
+from utils.db_utils import get_engine
 
 def load_clean_data_to_db():
     s3_path = "s3://ece5984-s3-rameyjm7/Project/transformed/combined_clean.json"

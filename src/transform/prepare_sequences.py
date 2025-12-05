@@ -1,127 +1,153 @@
 #!/usr/bin/env python3
-# Jacob M. Ramey
-# ECE5984, Final Project
-# Phase 6 – Feature Extraction / Sequence Preparation
-# Loads cleaned weather JSON, scales features, builds time-series splits,
-# writes X/y train/test to S3, and logs provenance to Amazon RDS.
 
-import pandas as pd
-import numpy as np
+import os
 import pickle
+import numpy as np
+import pandas as pd
 import s3fs
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.model_selection import TimeSeriesSplit
+import tensorflow as tf
+from tensorflow.keras.layers import Normalization
+from utils.provenance_utils import ProvenanceTimer
 
-from utils.provenance_utils import ProvenanceTimer   # <-- NEW (Phase 7)
+from src.config import (
+    USE_AWS,
+    S3_TRANSFORMED,
+    S3_SEQUENCES,
+    LOCAL_TRANSFORMED,
+    LOCAL_SEQUENCES,
+    LOCAL_CLEAN,
+)
 
-# ---------------------------------------------------------------------------
-# Main sequence preparation function
-# ---------------------------------------------------------------------------
+
 def prepare_sequences():
 
-    CLEAN_DIR = "s3://ece5984-s3-rameyjm7/Project/transformed"
-    SEQ_DIR   = "s3://ece5984-s3-rameyjm7/Project/sequences"
+    WINDOW = 40
 
     with ProvenanceTimer(
         stage="feature_extraction_weather",
-        input_source=f"{CLEAN_DIR}/combined_clean.json",
-        output_target=SEQ_DIR
+        input_source="clean data",
+        output_target="sequence generation"
     ) as p:
 
-        s3 = s3fs.S3FileSystem()
+        # ---------------------------------------------------------
+        # Load cleaned dataset
+        # ---------------------------------------------------------
+        if USE_AWS:
+            s3 = s3fs.S3FileSystem()
+            remote_json = f"{S3_TRANSFORMED}/combined_clean.json"
 
-        # -------------------------------------------------------------------
-        # Load cleaned JSON (from transform_phase)
-        # -------------------------------------------------------------------
-        try:
-            with s3.open(f"{CLEAN_DIR}/combined_clean.json", "rb") as f:
+            # Load dataframe from S3
+            with s3.open(remote_json, "rb") as f:
                 df = pd.read_json(f)
-        except FileNotFoundError:
-            raise RuntimeError("combined_clean.json not found — did transform run?")
+
+            # Save local copies for offline mode
+            local_json = os.path.join(LOCAL_TRANSFORMED, "combined_clean.json")
+            local_csv  = os.path.join(LOCAL_CLEAN, "weather_clean.csv")
+
+            df.to_json(local_json, orient="records")
+            df.to_csv(local_csv, index=False)
+
+            print(f"Saved local cleaned JSON: {local_json}")
+            print(f"Saved local cleaned CSV : {local_csv}")
+
+        else:
+            # Local-only mode
+            local_json = os.path.join(LOCAL_TRANSFORMED, "combined_clean.json")
+            local_csv  = os.path.join(LOCAL_CLEAN, "weather_clean.csv")
+
+            if os.path.exists(local_json):
+                df = pd.read_json(local_json)
+            elif os.path.exists(local_csv):
+                df = pd.read_csv(local_csv)
+            else:
+                raise RuntimeError(
+                    f"No local cleaned dataset found.\n"
+                    f"Expected:\n"
+                    f"  {local_json}\n"
+                    f"  {local_csv}\n"
+                    f"Run once with USE_AWS=True first."
+                )
 
         if df.empty:
-            raise RuntimeError("Cleaned dataframe is empty — cannot build sequences.")
+            raise RuntimeError("Clean dataframe is empty.")
 
-        # Sort by datetime for correct sliding-window behavior
-        if "datetime" in df.columns:
-            df = df.sort_values(by="datetime")
-        else:
-            df = df.sort_values(by="date")  # fallback
+        # Sort by datetime or date
+        df = df.sort_values(
+            "datetime" if "datetime" in df.columns else "date"
+        ).reset_index(drop=True)
 
-        # -------------------------------------------------------------------
-        # Target variable
-        # -------------------------------------------------------------------
-        y = df["temperature"].astype(float).values
-
-        # -------------------------------------------------------------------
-        # LSTM input feature set (consistent with milestone)
-        # -------------------------------------------------------------------
+        # ---------------------------------------------------------
+        # Extract features
+        # ---------------------------------------------------------
         feature_cols = ["temperature", "humidity", "wind_speed", "precipitation"]
 
-        # Select and coerce features
-        X_raw = df[feature_cols].astype(float)
+        X_raw = df[feature_cols].astype(float).values
+        y_raw = df["temperature"].astype(float).values
 
-        # -------------------------------------------------------------------
-        # Scale features (MinMaxScaler — EXACTLY like class)
-        # -------------------------------------------------------------------
-        scaler = MinMaxScaler()
-        X_scaled = scaler.fit_transform(X_raw)
-        X_scaled = pd.DataFrame(X_scaled, index=df.index, columns=feature_cols)
+        # ---------------------------------------------------------
+        # Build sliding windows
+        # ---------------------------------------------------------
+        X_seq, y_seq = [], []
+        for i in range(len(X_raw) - WINDOW):
+            X_seq.append(X_raw[i:i+WINDOW])
+            y_seq.append(y_raw[i + WINDOW])
 
-        # Save scaler for inference
-        with s3.open(f"{SEQ_DIR}/scaler.pkl", "wb") as f:
-            pickle.dump(scaler, f)
+        X_seq = np.array(X_seq)
+        y_seq = np.array(y_seq)
 
-        # -------------------------------------------------------------------
-        # TimeSeriesSplit (same pattern used in class — stocks HW3)
-        # n_splits=10 → final split becomes train/test
-        # -------------------------------------------------------------------
-        tscv = TimeSeriesSplit(n_splits=10)
+        # Train/test split
+        split = int(0.8 * len(X_seq))
+        X_train, X_test = X_seq[:split], X_seq[split:]
+        y_train, y_test = y_seq[:split], y_seq[split:]
 
-        X_train = X_test = y_train = y_test = None
+        # ---------------------------------------------------------
+        # Build Normalization layer
+        # ---------------------------------------------------------
+        normalizer = Normalization()
+        normalizer.adapt(X_train.reshape(-1, X_train.shape[-1]))
 
-        for train_idx, test_idx in tscv.split(X_scaled):
-            X_train = X_scaled.iloc[train_idx].values
-            X_test  = X_scaled.iloc[test_idx].values
-            y_train = y[train_idx]
-            y_test  = y[test_idx]
+        normalizer_weights = normalizer.get_weights()
 
-        # Safety check
-        if X_train is None or X_test is None:
-            raise RuntimeError("TimeSeriesSplit failed to generate train/test splits.")
+        # ---------------------------------------------------------
+        # Save everything locally (always)
+        # ---------------------------------------------------------
+        np.save(os.path.join(LOCAL_SEQUENCES, "X_train_weather.npy"), X_train)
+        np.save(os.path.join(LOCAL_SEQUENCES, "X_test_weather.npy"), X_test)
+        np.save(os.path.join(LOCAL_SEQUENCES, "y_train_weather.npy"), y_train)
+        np.save(os.path.join(LOCAL_SEQUENCES, "y_test_weather.npy"), y_test)
 
-        # -------------------------------------------------------------------
-        # Save sequences to S3 (pickle format — matches class methodology)
-        # -------------------------------------------------------------------
-        with s3.open(f"{SEQ_DIR}/X_train_weather.pkl", "wb") as f:
-            pickle.dump(X_train, f)
-        with s3.open(f"{SEQ_DIR}/X_test_weather.pkl", "wb") as f:
-            pickle.dump(X_test, f)
-        with s3.open(f"{SEQ_DIR}/y_train_weather.pkl", "wb") as f:
-            pickle.dump(y_train, f)
-        with s3.open(f"{SEQ_DIR}/y_test_weather.pkl", "wb") as f:
-            pickle.dump(y_test, f)
+        with open(os.path.join(LOCAL_SEQUENCES, "normalizer_weights.pkl"), "wb") as f:
+            pickle.dump(normalizer_weights, f)
 
-        # -------------------------------------------------------------------
-        # Provenance Logging (Phase 7)
-        # -------------------------------------------------------------------
+        print(f"Saved local sequences to {LOCAL_SEQUENCES}")
+
+        # ---------------------------------------------------------
+        # Save to S3 if AWS enabled
+        # ---------------------------------------------------------
+        if USE_AWS:
+            s3 = s3fs.S3FileSystem()
+
+            def s3_save(path, arr):
+                with s3.open(path, "wb") as f:
+                    np.save(f, arr)
+
+            s3_save(f"{S3_SEQUENCES}/X_train_weather.npy", X_train)
+            s3_save(f"{S3_SEQUENCES}/X_test_weather.npy", X_test)
+            s3_save(f"{S3_SEQUENCES}/y_train_weather.npy", y_train)
+            s3_save(f"{S3_SEQUENCES}/y_test_weather.npy", y_test)
+
+            with s3.open(f"{S3_SEQUENCES}/normalizer_weights.pkl", "wb") as f:
+                pickle.dump(normalizer_weights, f)
+
+            print("Uploaded sequences + normalizer to S3.")
+
         p.commit(
             status="SUCCESS",
             records_in=len(df),
-            records_out=len(X_train) + len(X_test),
-            extra={
-                "features": feature_cols,
-                "X_train_shape": X_train.shape,
-                "X_test_shape": X_test.shape,
-                "splits": 10
-            }
+            records_out=len(X_seq),
+            extra={"window_hours": WINDOW},
         )
 
-        print("Weather sequences prepared and stored to S3.")
 
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
 if __name__ == "__main__":
     prepare_sequences()

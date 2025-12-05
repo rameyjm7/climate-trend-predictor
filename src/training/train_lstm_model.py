@@ -1,121 +1,171 @@
 #!/usr/bin/env python3
-# Jacob M. Ramey
-# ECE5984, Final Project
-# Phase 6 – Model Training (TensorFlow LSTM)
-# Loads sequence data from S3, trains an LSTM model, saves .keras model to S3,
-# and logs provenance to Amazon RDS.
 
+import os
 import numpy as np
 import pickle
-import s3fs
 import tempfile
-from keras.models import Sequential
-from keras.layers import LSTM, Dense
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
-from utils.provenance_utils import ProvenanceTimer   # <-- NEW (Phase 7)
+import tensorflow as tf
+from tensorflow.keras import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Dropout, Normalization
 
-# ---------------------------------------------------------------------------
-# Main training function
-# ---------------------------------------------------------------------------
+from src.config import (
+    USE_AWS,
+    LOCAL_SEQUENCES,
+    LOCAL_MODELS,
+    S3_SEQUENCES,
+    S3_MODELS,
+)
+
+if USE_AWS:
+    import s3fs
+
+from utils.provenance_utils import ProvenanceTimer
+
+
 def train_lstm_weather():
 
-    SEQ_DIR   = "s3://ece5984-s3-rameyjm7/Project/sequences"
-    MODEL_DIR = "s3://ece5984-s3-rameyjm7/Project/models"
+    WINDOW = 40
 
     with ProvenanceTimer(
         stage="train_lstm_weather",
-        input_source=SEQ_DIR,
-        output_target=f"{MODEL_DIR}/weather_lstm.keras"
+        input_source="prepared sequences",
+        output_target="trained model"
     ) as p:
 
-        s3 = s3fs.S3FileSystem()
+        # ---------------------------------------------------------
+        # Load sequences
+        # ---------------------------------------------------------
+        if USE_AWS:
+            s3 = s3fs.S3FileSystem()
 
-        # -------------------------------------------------------------------
-        # Load prepared sequences (X/y train/test)
-        # -------------------------------------------------------------------
-        try:
-            X_train = np.load(s3.open(f"{SEQ_DIR}/X_train_weather.pkl"), allow_pickle=True)
-            X_test  = np.load(s3.open(f"{SEQ_DIR}/X_test_weather.pkl"), allow_pickle=True)
-            y_train = np.load(s3.open(f"{SEQ_DIR}/y_train_weather.pkl"), allow_pickle=True)
-            y_test  = np.load(s3.open(f"{SEQ_DIR}/y_test_weather.pkl"), allow_pickle=True)
-        except Exception as e:
-            raise RuntimeError("Failed to load training sequences from S3: " + str(e))
+            X_train = np.load(s3.open(f"{S3_SEQUENCES}/X_train_weather.npy", "rb"))
+            X_test  = np.load(s3.open(f"{S3_SEQUENCES}/X_test_weather.npy",  "rb"))
+            y_train = np.load(s3.open(f"{S3_SEQUENCES}/y_train_weather.npy", "rb"))
+            y_test  = np.load(s3.open(f"{S3_SEQUENCES}/y_test_weather.npy",  "rb"))
 
-        if X_train.size == 0 or X_test.size == 0:
-            raise RuntimeError("Training or testing data is empty — cannot train model.")
+            with s3.open(f"{S3_SEQUENCES}/normalizer_weights.pkl", "rb") as f:
+                normalizer_weights = pickle.load(f)
 
-        n_features = X_train.shape[1]
+            # Write mirrored copies locally
+            np.save(os.path.join(LOCAL_SEQUENCES, "X_train_weather.npy"), X_train)
+            np.save(os.path.join(LOCAL_SEQUENCES, "X_test_weather.npy"), X_test)
+            np.save(os.path.join(LOCAL_SEQUENCES, "y_train_weather.npy"), y_train)
+            np.save(os.path.join(LOCAL_SEQUENCES, "y_test_weather.npy"), y_test)
+            with open(os.path.join(LOCAL_SEQUENCES, "normalizer_weights.pkl"), "wb") as f:
+                pickle.dump(normalizer_weights, f)
 
-        # -------------------------------------------------------------------
-        # Reshape for LSTM: (samples, timesteps=1, features)
-        # -------------------------------------------------------------------
-        X_train = X_train.reshape(X_train.shape[0], 1, n_features)
-        X_test  = X_test.reshape(X_test.shape[0], 1, n_features)
+        else:
+            X_train = np.load(os.path.join(LOCAL_SEQUENCES, "X_train_weather.npy"))
+            X_test  = np.load(os.path.join(LOCAL_SEQUENCES, "X_test_weather.npy"))
+            y_train = np.load(os.path.join(LOCAL_SEQUENCES, "y_train_weather.npy"))
+            y_test  = np.load(os.path.join(LOCAL_SEQUENCES, "y_test_weather.npy"))
+            with open(os.path.join(LOCAL_SEQUENCES, "normalizer_weights.pkl"), "rb") as f:
+                normalizer_weights = pickle.load(f)
 
-        # -------------------------------------------------------------------
-        # Build LSTM model (class architecture — HW3 pattern)
-        # -------------------------------------------------------------------
-        model = Sequential()
-        model.add(LSTM(
-            units=32,
-            activation="relu",
-            return_sequences=False,
-            input_shape=(1, n_features)
-        ))
-        model.add(Dense(1))
+        n_features = X_train.shape[2]
+
+        # ---------------------------------------------------------
+        # Build X normalizer
+        # ---------------------------------------------------------
+        x_norm = Normalization()
+        x_norm.build(input_shape=(None, n_features))
+        x_norm.set_weights(normalizer_weights)
+
+        X_train_norm = np.array(x_norm(X_train))
+        X_test_norm  = np.array(x_norm(X_test))
+
+        # ---------------------------------------------------------
+        # NEW: y normalization (CRITICAL)
+        # ---------------------------------------------------------
+        y_norm = Normalization(axis=None)
+        y_norm.adapt(y_train.reshape(-1, 1))
+
+        # Save y-normalizer weights locally
+        y_norm_path_local = os.path.join(LOCAL_SEQUENCES, "y_normalizer_weights.pkl")
+        with open(y_norm_path_local, "wb") as f:
+            pickle.dump(y_norm.get_weights(), f)
+
+        # Save to S3 if online
+        if USE_AWS:
+            y_norm_path_s3 = f"{S3_SEQUENCES}/y_normalizer_weights.pkl"
+            with s3.open(y_norm_path_s3, "wb") as f:
+                pickle.dump(y_norm.get_weights(), f)
+
+        # Normalize target labels
+        y_train_norm = y_norm(y_train.reshape(-1, 1)).numpy()
+        y_test_norm  = y_norm(y_test.reshape(-1, 1)).numpy()
+
+        # ---------------------------------------------------------
+        # Deep LSTM Model
+        # ---------------------------------------------------------
+        model = Sequential([
+            LSTM(128, return_sequences=True, activation="tanh",
+                 input_shape=(WINDOW, n_features)),
+            Dropout(0.2),
+
+            LSTM(64, return_sequences=False, activation="tanh"),
+            Dropout(0.2),
+
+            Dense(64, activation="relu"),
+            Dense(32, activation="relu"),
+            Dense(1),
+        ])
 
         model.compile(
-            loss="mean_squared_error",
-            optimizer="adam"
+            optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+            loss="mse",
+            metrics=["mae"]
         )
 
-        # -------------------------------------------------------------------
-        # Train model (25 epochs just like class)
-        # -------------------------------------------------------------------
+        # ---------------------------------------------------------
+        # Train Model
+        # ---------------------------------------------------------
         history = model.fit(
-            X_train, y_train,
-            epochs=25,
-            batch_size=8,
-            verbose=1,
+            X_train_norm, y_train_norm,
+            validation_data=(X_test_norm, y_test_norm),
+            epochs=120,
+            batch_size=16,
             shuffle=False,
-            validation_data=(X_test, y_test)
+            verbose=1
         )
 
-        # Get final metrics
-        final_train_loss = float(history.history["loss"][-1])
-        final_val_loss   = float(history.history["val_loss"][-1])
+        # ---------------------------------------------------------
+        # Save model + graphs
+        # ---------------------------------------------------------
+        model_path_local = os.path.join(LOCAL_MODELS, "weather_lstm.keras")
+        plot_path_local  = os.path.join(LOCAL_MODELS, "training_curve.png")
 
-        # -------------------------------------------------------------------
-        # Save model as .keras (required by you)
-        # -------------------------------------------------------------------
-        with tempfile.TemporaryDirectory() as temp_dir:
-            local_model_path = f"{temp_dir}/weather_lstm.keras"
-            model.save(local_model_path)
-            s3.put(local_model_path, f"{MODEL_DIR}/weather_lstm.keras")
+        with tempfile.TemporaryDirectory():
 
-        print("Weather LSTM model trained and uploaded to S3.")
+            model.save(model_path_local)
 
-        # -------------------------------------------------------------------
-        # Provenance Log (Phase 7)
-        # -------------------------------------------------------------------
+            plt.figure(figsize=(8,5))
+            plt.plot(history.history["loss"], label="Train Loss")
+            plt.plot(history.history["val_loss"], label="Val Loss")
+            plt.legend()
+            plt.title("Training vs Validation Loss (y-normalized)")
+            plt.xlabel("Epoch")
+            plt.ylabel("Loss")
+            plt.savefig(plot_path_local, dpi=150, bbox_inches="tight")
+            plt.close()
+
+            if USE_AWS:
+                s3.put(model_path_local, f"{S3_MODELS}/weather_lstm.keras")
+                s3.put(plot_path_local, f"{S3_MODELS}/training_curve.png")
+
+        # ---------------------------------------------------------
+        # Provenance
+        # ---------------------------------------------------------
         p.commit(
             status="SUCCESS",
             records_in=len(X_train),
             records_out=1,
-            extra={
-                "epochs": 25,
-                "batch_size": 8,
-                "features": n_features,
-                "X_train_shape": X_train.shape,
-                "X_test_shape": X_test.shape,
-                "train_loss": final_train_loss,
-                "val_loss": final_val_loss,
-                "model_path": f"{MODEL_DIR}/weather_lstm.keras"
-            }
         )
 
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
+
 if __name__ == "__main__":
     train_lstm_weather()

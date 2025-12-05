@@ -1,137 +1,204 @@
 #!/usr/bin/env python3
-# Jacob M. Ramey
-# ECE5984, Final Project
-# Phase 6 – Model Inference
-# Uses last cleaned weather record from RDS, runs LSTM inference,
-# inserts prediction into RDS, and logs provenance (Phase 7).
 
-import numpy as np
+import os
 import pickle
+import numpy as np
 import pandas as pd
-import s3fs
-import tempfile
-from sqlalchemy import create_engine
-from keras.models import load_model
+import tensorflow as tf
+from tensorflow.keras.layers import Normalization
+from tensorflow.keras.models import load_model
 
-from utils.provenance_utils import ProvenanceTimer   # <-- NEW
+from src.config import (
+    USE_AWS,
+    LOCAL_SEQUENCES,
+    LOCAL_MODELS,
+    LOCAL_LIVE,
+    LOCAL_CLEANED,
+    S3_SEQUENCES,
+    S3_MODELS,
+    S3_LIVE,
+)
 
-# ---------------------------------------------------------------------------
-# Main Prediction Function
-# ---------------------------------------------------------------------------
-def predict_next_hour():
+if USE_AWS:
+    import s3fs
+    from sqlalchemy import create_engine
+    from src.config import RDS_HOST, RDS_USER, RDS_PASS, RDS_DB
 
-    SEQ_DIR   = "s3://ece5984-s3-rameyjm7/Project/sequences"
-    MODEL_DIR = "s3://ece5984-s3-rameyjm7/Project/models"
 
-    # Update these with your actual RDS credentials
-    RDS_USER = "YOURUSER"
-    RDS_PASS = "YOURPASS"
-    RDS_HOST = "YOUR-RDS-ENDPOINT.amazonaws.com"
-    RDS_DB   = "weatherdb"
+def load_latest_local_forecast(city, window):
+    """
+    Load last `window` rows from the locally cleaned dataset.
+    Enables full offline inference.
+    """
+    cleaned_csv = os.path.join(LOCAL_CLEANED, "weather_clean.csv")
 
-    with ProvenanceTimer(
-        stage="predict_next_hour_weather",
-        input_source="RDS: weather_clean (latest 1 row)",
-        output_target="RDS: weather_predictions"
-    ) as p:
-
-        s3 = s3fs.S3FileSystem()
-
-        # -------------------------------------------------------------------
-        # Load scaler from S3
-        # -------------------------------------------------------------------
-        try:
-            scaler = pickle.load(s3.open(f"{SEQ_DIR}/scaler.pkl", "rb"))
-        except Exception as e:
-            raise RuntimeError("Failed to load scaler.pkl from S3: " + str(e))
-
-        # -------------------------------------------------------------------
-        # Load trained .keras model from S3 -> /tmp
-        # -------------------------------------------------------------------
-        try:
-            with s3.open(f"{MODEL_DIR}/weather_lstm.keras", "rb") as f:
-                with open("/tmp/weather_lstm.keras", "wb") as tmp_f:
-                    tmp_f.write(f.read())
-            model = load_model("/tmp/weather_lstm.keras")
-        except Exception as e:
-            raise RuntimeError("Failed to load LSTM model from S3: " + str(e))
-
-        # -------------------------------------------------------------------
-        # Connect to Amazon RDS
-        # -------------------------------------------------------------------
-        try:
-            engine = create_engine(
-                f"mysql+pymysql://{RDS_USER}:{RDS_PASS}@{RDS_HOST}/{RDS_DB}"
-            )
-        except Exception as e:
-            raise RuntimeError("Failed to connect to Amazon RDS: " + str(e))
-
-        # -------------------------------------------------------------------
-        # Get latest weather record from RDS
-        # -------------------------------------------------------------------
-        query = """
-            SELECT *
-            FROM weather_clean
-            ORDER BY datetime DESC
-            LIMIT 1;
-        """
-
-        df = pd.read_sql(query, engine)
-
-        if df.empty:
-            raise RuntimeError("No rows available in RDS weather_clean table.")
-
-        df = df.sort_values("datetime")
-
-        # -------------------------------------------------------------------
-        # Prepare LSTM input row
-        # -------------------------------------------------------------------
-        feature_cols = ["temperature", "humidity", "wind_speed", "precipitation"]
-
-        try:
-            X_input = df[feature_cols].astype(float).values[-1:]
-        except KeyError as e:
-            raise RuntimeError("RDS weather_clean missing required feature columns: " + str(e))
-
-        # Scale + reshape
-        X_scaled = scaler.transform(X_input)
-        X_scaled = X_scaled.reshape(1, 1, X_scaled.shape[1])
-
-        # -------------------------------------------------------------------
-        # Run LSTM prediction
-        # -------------------------------------------------------------------
-        pred = float(model.predict(X_scaled)[0][0])
-
-        # -------------------------------------------------------------------
-        # Insert prediction into RDS predictions table
-        # -------------------------------------------------------------------
-        insert_sql = """
-            INSERT INTO weather_predictions (datetime, prediction)
-            VALUES (NOW(), %s);
-        """
-
-        with engine.begin() as conn:
-            conn.execute(insert_sql, (pred,))
-
-        print(f"Prediction stored in RDS: {pred:.4f}")
-
-        # -------------------------------------------------------------------
-        # Provenance Logging (Phase 7)
-        # -------------------------------------------------------------------
-        p.commit(
-            status="SUCCESS",
-            records_in=1,
-            records_out=1,
-            extra={
-                "last_weather_row": df.to_dict(orient="records")[0],
-                "prediction": pred,
-                "model_path": f"{MODEL_DIR}/weather_lstm.keras"
-            }
+    if not os.path.exists(cleaned_csv):
+        raise RuntimeError(
+            f"Local cleaned dataset not found: {cleaned_csv}\n"
+            "Run ingestion + sequence prep at least once with USE_AWS=True."
         )
 
+    df = pd.read_csv(cleaned_csv)
+    df_city = df[df["city"] == city].sort_values("datetime")
 
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
+    if len(df_city) < window:
+        raise RuntimeError(
+            f"Not enough local rows for {city}. Need {window}, have {len(df_city)}."
+        )
+
+    return df_city.iloc[-window:]
+
+
+def predict_next_hour(city="Seattle", window=40):
+
+    print("\nRunning 40-hour LSTM forecast...\n")
+
+    # ---------------------------------------------------------
+    # Load X normalizer
+    # ---------------------------------------------------------
+    x_norm_path = os.path.join(LOCAL_SEQUENCES, "normalizer_weights.pkl")
+    if USE_AWS:
+        s3 = s3fs.S3FileSystem()
+        with s3.open(f"{S3_SEQUENCES}/normalizer_weights.pkl", "rb") as f:
+            weights = pickle.load(f)
+        with open(x_norm_path, "wb") as f:
+            pickle.dump(weights, f)
+    else:
+        with open(x_norm_path, "rb") as f:
+            weights = pickle.load(f)
+
+    x_norm = Normalization()
+    x_norm.build(input_shape=(None, 4))
+    x_norm.set_weights(weights)
+
+    # ---------------------------------------------------------
+    # Load Y normalizer
+    # ---------------------------------------------------------
+    y_norm_path = os.path.join(LOCAL_SEQUENCES, "y_normalizer_weights.pkl")
+    if USE_AWS:
+        with s3.open(f"{S3_SEQUENCES}/y_normalizer_weights.pkl", "rb") as f:
+            yw = pickle.load(f)
+        with open(y_norm_path, "wb") as f:
+            pickle.dump(yw, f)
+    else:
+        with open(y_norm_path, "rb") as f:
+            yw = pickle.load(f)
+
+    y_norm = Normalization(axis=None)
+    y_norm.build(input_shape=(None, 1))
+    y_norm.set_weights(yw)
+
+    # ---------------------------------------------------------
+    # Load model
+    # ---------------------------------------------------------
+    model_path = os.path.join(LOCAL_MODELS, "weather_lstm.keras")
+
+    if USE_AWS:
+        with s3.open(f"{S3_MODELS}/weather_lstm.keras", "rb") as f_in:
+            with open(model_path, "wb") as f_out:
+                f_out.write(f_in.read())
+
+    model = load_model(model_path)
+
+    # ---------------------------------------------------------
+    # Load historical window (AWS or local CSV)
+    # ---------------------------------------------------------
+    if USE_AWS:
+        engine = create_engine(
+            f"mysql+pymysql://{RDS_USER}:{RDS_PASS}@{RDS_HOST}/{RDS_DB}"
+        )
+        df = pd.read_sql(
+            f"SELECT * FROM weather_clean WHERE city='{city}' "
+            f"ORDER BY datetime DESC LIMIT {window}", engine
+        )
+        df = df.sort_values("datetime")
+
+    else:
+        df = load_latest_local_forecast(city, window)
+
+    # ---------------------------------------------------------
+    # Prepare model input
+    # ---------------------------------------------------------
+    feature_cols = ["temperature", "humidity", "wind_speed", "precipitation"]
+    X_window = df[feature_cols].astype(float).values
+
+    X_normed = x_norm(X_window)
+    X_input = np.array(X_normed).reshape(1, window, len(feature_cols))
+
+    # ---------------------------------------------------------
+    # Predict normalized Y
+    # ---------------------------------------------------------
+    pred_y_norm = model.predict(X_input)[0][0]
+
+    # ---------------------------------------------------------
+    # Denormalize
+    # ---------------------------------------------------------
+    mu = y_norm.mean.numpy()
+    sigma = np.sqrt(y_norm.variance.numpy())
+    pred_c = float(mu + pred_y_norm * sigma)
+    pred_f = pred_c * 9/5 + 32
+
+    forecast_last_temp_c = float(df["temperature"].iloc[-1])
+    forecast_last_temp_f = forecast_last_temp_c * 9/5 + 32
+
+    # ---------------------------------------------------------
+    # Load LIVE (AWS or local)
+    # ---------------------------------------------------------
+    live_last_c = None
+
+    if USE_AWS:
+        files = s3.glob(f"{S3_LIVE}/weather_live_all_cities_*.pkl")
+        live_df = None
+        if files:
+            newest = sorted(files)[-1]
+            with s3.open(newest, "rb") as f:
+                live_df = pickle.load(f)
+    else:
+        files = [
+            os.path.join(LOCAL_LIVE, f)
+            for f in os.listdir(LOCAL_LIVE)
+            if f.startswith("weather_live_all_cities_")
+        ]
+        live_df = None
+        if files:
+            newest = sorted(files)[-1]
+            with open(newest, "rb") as f:
+                live_df = pickle.load(f)
+
+    if live_df is not None:
+        row = live_df[live_df["city"] == city]
+        if len(row) > 0:
+            live_last_c = float(row["temperature"].iloc[0])
+
+    live_last_f = live_last_c * 9/5 + 32 if live_last_c is not None else None
+
+    # ---------------------------------------------------------
+    # Output
+    # ---------------------------------------------------------
+    print("==========================================================")
+    print(f" {city} Weather – Forecast vs Live vs Model")
+    print("==========================================================\n")
+
+    print(f" Forecast Last Observed : {forecast_last_temp_c:6.2f} C / {forecast_last_temp_f:6.2f} F")
+
+    if live_last_c is not None:
+        print(f" Live Last Observed     : {live_last_c:6.2f} C / {live_last_f:6.2f} F")
+    else:
+        print(" Live Last Observed     : unavailable")
+
+    print(f" Model Prediction (+1h) : {pred_c:6.2f} C / {pred_f:6.2f} F")
+    print("==========================================================\n")
+
+    return {
+        "city": city,
+        "forecast_last_temp_c": forecast_last_temp_c,
+        "forecast_last_temp_f": forecast_last_temp_f,
+        "live_last_temp_c": live_last_c,
+        "live_last_temp_f": live_last_f,
+        "pred_c": pred_c,
+        "pred_f": pred_f,
+    }
+
+
 if __name__ == "__main__":
     predict_next_hour()

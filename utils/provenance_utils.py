@@ -1,35 +1,55 @@
 import time
 import json
-from sqlalchemy import create_engine
-from datetime import datetime
 import os
+from datetime import datetime
 
-# ---------------------------------------------------------------------------
-# Load Amazon RDS credentials from environment
-# ---------------------------------------------------------------------------
-RDS_USER = os.getenv("RDS_USER")
-RDS_PASS = os.getenv("RDS_PASS")
-RDS_HOST = os.getenv("RDS_HOST")
-RDS_DB   = os.getenv("RDS_DB", "weatherdb")   # default to weatherdb if unset
+from sqlalchemy import create_engine, text
 
-# Validate required variables
-missing = []
-
-if not RDS_USER:
-    missing.append("RDS_USER")
-if not RDS_PASS:
-    missing.append("RDS_PASS")
-if not RDS_HOST:
-    missing.append("RDS_HOST")
-
-if missing:
-    raise ValueError(f"Missing required RDS environment variables: {', '.join(missing)}")
-
-
-engine = create_engine(
-    f"mysql+pymysql://{RDS_USER}:{RDS_PASS}@{RDS_HOST}/{RDS_DB}"
+# ============================================================
+# Load config (A: global config.py)
+# ============================================================
+from src.config import (
+    USE_AWS,
+    RDS_USER,
+    RDS_PASS,
+    RDS_HOST,
+    RDS_DB,
 )
 
+# If not using AWS → disable DB logging
+if USE_AWS:
+    engine = create_engine(
+        f"mysql+pymysql://{RDS_USER}:{RDS_PASS}@{RDS_HOST}/{RDS_DB}"
+    )
+else:
+    engine = None
+
+
+# ------------------------------------------------------------
+# Safe DB existence check (AWS only)
+# ------------------------------------------------------------
+def ensure_database_exists():
+    if not USE_AWS:
+        return
+
+    # SQLAlchemy 2.x requires exec_driver_sql
+    with engine.connect() as conn:
+        result = conn.exec_driver_sql(
+            f"SHOW DATABASES LIKE '{RDS_DB}';"
+        ).fetchone()
+
+        if not result:
+            conn.exec_driver_sql(f"CREATE DATABASE {RDS_DB};")
+
+
+# Ensure DB exists only once at import time
+if USE_AWS:
+    ensure_database_exists()
+
+
+# ------------------------------------------------------------
+# Provenance Logging
+# ------------------------------------------------------------
 def log_provenance(
     stage: str,
     status: str,
@@ -40,30 +60,44 @@ def log_provenance(
     duration_seconds: float = None,
     extra: dict = None
 ):
-    """Insert a provenance entry into RDS."""
-    with engine.begin() as conn:
-        conn.execute(
-            """
-            INSERT INTO provenance_log
-            (stage, status, timestamp, input_source, output_target,
-             records_in, records_out, duration_seconds, extra)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """,
-            (
-                stage,
-                status,
-                datetime.utcnow(),
-                input_source,
-                output_target,
-                records_in,
-                records_out,
-                duration_seconds,
-                json.dumps(extra) if extra else None
-            )
-        )
+    """
+    Insert provenance into RDS only when USE_AWS=true.
+    Otherwise, print locally.
+    """
 
+    if not USE_AWS:
+        print(f"[LOCAL MODE] Provenance skipped: {stage} ({status})")
+        return
+
+    payload = {
+        "stage": stage,
+        "status": status,
+        "timestamp": datetime.utcnow(),
+        "input_source": input_source,
+        "output_target": output_target,
+        "records_in": records_in,
+        "records_out": records_out,
+        "duration_seconds": duration_seconds,
+        "extra": json.dumps(extra) if extra else None,
+    }
+
+    sql = text("""
+        INSERT INTO provenance_log
+        (stage, status, timestamp, input_source, output_target,
+         records_in, records_out, duration_seconds, extra)
+        VALUES
+        (:stage, :status, :timestamp, :input_source, :output_target,
+         :records_in, :records_out, :duration_seconds, :extra)
+    """)
+
+    with engine.begin() as conn:
+        conn.execute(sql, payload)
+
+
+# ------------------------------------------------------------
+# Context Manager
+# ------------------------------------------------------------
 class ProvenanceTimer:
-    """Context manager for timing a pipeline stage."""
     def __init__(self, stage, input_source=None, output_target=None):
         self.stage = stage
         self.input_source = input_source
@@ -83,11 +117,10 @@ class ProvenanceTimer:
             records_in=records_in,
             records_out=records_out,
             duration_seconds=duration,
-            extra=extra
+            extra=extra,
         )
 
     def __exit__(self, exc_type, exc_value, traceback):
-        # Auto-log failure if exception occurs
         if exc_type is not None:
             duration = time.time() - self.start
             log_provenance(
@@ -96,5 +129,5 @@ class ProvenanceTimer:
                 input_source=self.input_source,
                 output_target=self.output_target,
                 duration_seconds=duration,
-                extra={"error": str(exc_value)}
+                extra={"error": str(exc_value)},
             )
