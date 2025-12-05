@@ -167,6 +167,8 @@ In AWS EC2 container:
 - run the 'weather_full_pipeline' dag
 - view the graph to watch it execute
 
+You can also run the scripts/test_pipeline.sh script inside the docker container to run the pipeline without Airflow, still using AWS S3, EC2, RDS
+
 
 <img width="975" height="252" alt="image" src="https://github.com/user-attachments/assets/93436c36-d51b-46e3-bb87-ab97ec9415cb" />
 
