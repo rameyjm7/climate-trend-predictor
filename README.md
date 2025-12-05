@@ -10,8 +10,6 @@
   <img src="https://img.shields.io/badge/Data%20Pipeline-Python%20%7C%20Airflow-lightgrey?style=flat-square" />
 </p>
 
-# Climate Trend Predictor
-
 **Climate Trend Predictor** is an end-to-end data engineering pipeline for city-level weather forecasting.  
 It automates ingestion, cleaning, transformation, LSTM model training, inference, and visualization using a Batch–ML–Visualization pipeline deployed both locally and on AWS.
 
@@ -125,4 +123,16 @@ Recommended next steps include building a multivariate LSTM or Transformer, inte
 
 # 10. Running the Project
 
-### Manual Pipeline Execution
+In AWS EC2 container:
+- spin up the docker container
+- cd into the repo root
+- run 'pip install -r requirements.txt'
+- run 'source env.txt'
+- edit src/config.py and put the password where it says RDS_PASS for the default
+- cd to the airflow directory
+- mkdir dags/
+- run 'ln -s /path/to/climate-trend-predictor/src/airflow/weather_pipeline_dag.py dags/'
+- start airflow 'airflow standalone'
+- log in with the admin password
+- run the 'weather_full_pipeline' dag
+- view the graph to watch it execute
