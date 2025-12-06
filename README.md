@@ -116,7 +116,7 @@ Training versus validation MSE
 
 # 8. Code Repository
 GitHub Repository:  
-[https://github.com/your-username/climate-trend-predictor](https://github.com/rameyjm7/climate-trend-predictor)
+[https://github.com/rameyjm7/climate-trend-predictor](https://github.com/rameyjm7/climate-trend-predictor)
 
 ---
 
