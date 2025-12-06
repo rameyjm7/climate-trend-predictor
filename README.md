@@ -69,8 +69,6 @@ A stacked LSTM model (128/64 units) with dropout and dense layers was trained fo
 Accuracy improved significantly after increasing dataset size and training duration.  
 Inference uses autoregressive multi-step prediction (+8 hours).
 
-<photo about model results>
-
 <img width="751" height="307" alt="image" src="https://github.com/user-attachments/assets/299fb650-469c-40f2-aacb-f7f32a323ace" /> 
 
 Time-series temperature plot for Chicago 
@@ -91,17 +89,17 @@ Feature correlation matrix for meteorological variables.
 Pairwise relationship between meteorological variables.
 
 
-<img width="750" height="293" alt="image" src="https://github.com/user-attachments/assets/fc2ebda5-cbe5-40e4-be86-25139c77a326" />
+<img width="600" height="293" alt="image" src="https://github.com/user-attachments/assets/fc2ebda5-cbe5-40e4-be86-25139c77a326" />
 
 Temperature autocorrelation confirms daily periodicity.
 
 
-<img width="1000" height="600" alt="image" src="https://github.com/user-attachments/assets/ae62f5a4-3e97-4735-aca6-ecd02cade0c8" />
+<img width="600" height="400" alt="image" src="https://github.com/user-attachments/assets/ae62f5a4-3e97-4735-aca6-ecd02cade0c8" />
 
 Actual versus predicted weather for Seattle
 
 
-<img width="1268" height="817" alt="image" src="https://github.com/user-attachments/assets/3f3d2573-ad5a-42ab-8621-511a4767c026" />
+<img width="600" height="400" alt="image" src="https://github.com/user-attachments/assets/3f3d2573-ad5a-42ab-8621-511a4767c026" />
 
 Training versus validation MSE
 
@@ -109,7 +107,13 @@ Training versus validation MSE
 
 # 7. Infographic
 
-<img width="512" height="776" alt="image" src="https://github.com/user-attachments/assets/8273329e-d564-448d-9691-add0be91f057" />
+**The Pipeline**
+
+<img width="500" height="776" alt="image" src="https://github.com/user-attachments/assets/4bd167a7-320f-4dd4-bfaf-0f7690b1e4cd" />
+
+**The results**
+
+<img width="600" height="400" alt="image" src="https://github.com/user-attachments/assets/5a30cade-ca3a-488f-b3fa-89e59dde98bf" />
 
 
 ---
@@ -154,7 +158,11 @@ Recommended next steps include building a multivariate LSTM or Transformer, inte
 
 ---
 
-# 10. Running the Project
+# 10. Running the Project 
+<img width="149" height="70" alt="image" src="https://github.com/user-attachments/assets/6e32ea40-50e1-45ff-ba15-c72322a3423f" />
+<img width="75" height="75" alt="image" src="https://github.com/user-attachments/assets/2fffb01c-6909-4330-9766-30823449ef2f" />
+<img width="149" height="70" alt="image" src="https://github.com/user-attachments/assets/024b107f-1da3-4278-8c27-ba0f9bfc9d4f" />
+
 
 In AWS EC2 container:
 - spin up the docker container
@@ -173,7 +181,7 @@ In AWS EC2 container:
 You can also run the scripts/test_pipeline.sh script inside the docker container to run the pipeline without Airflow, still using AWS S3, EC2, RDS
 
 
-<img width="975" height="252" alt="image" src="https://github.com/user-attachments/assets/93436c36-d51b-46e3-bb87-ab97ec9415cb" />
+<img width="1511" height="932" alt="image" src="https://github.com/user-attachments/assets/3be6934f-237b-40e4-9cb6-2db8007020e1" />
 
 
 DAG running in Apache Airflow
@@ -182,6 +190,11 @@ DAG running in Apache Airflow
 <img width="975" height="252" alt="image" src="https://github.com/user-attachments/assets/5a98607f-9ed0-4297-8579-b6dda5cda71b" />
 
 DAG Pipeline graph
+
+
+Training an LSTM Model in Airflow
+
+<img width="1233" height="833" alt="image" src="https://github.com/user-attachments/assets/92b4d71d-6af8-410b-9708-a4a9681537fc" />
 
 
 Results are saved to a database and queryable, shown above. Also you can run inference on the CLI and here is an example output
