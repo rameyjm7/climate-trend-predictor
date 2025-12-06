@@ -39,6 +39,9 @@ Data is sourced from OpenWeatherMap (forecast + live) and custom historical scra
 Features include temperature, humidity, wind speed, and precipitation.  
 Merged and cleaned data is stored in local/S3 dual-mode folders or in MySQL RDS.
 
+To get a free API key from OpenWeatherMap, go here https://openweathermap.org/api
+1000 API calls a day is free
+
 ---
 
 # 4. Pipeline / Architecture
