@@ -109,7 +109,7 @@ Training versus validation MSE
 
 # 7. Infographic
 
-<img width="512" height="776" alt="image" src="https://github.com/user-attachments/assets/67434b73-d24f-4d63-a4fe-1c903707f9e5" />
+<img width="512" height="776" alt="image" src="https://github.com/user-attachments/assets/8273329e-d564-448d-9691-add0be91f057" />
 
 
 ---
